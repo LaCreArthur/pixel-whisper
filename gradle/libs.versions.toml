@@ -1,15 +1,15 @@
 [versions]
-agp = "8.7.3"
-kotlin = "2.0.21"
-coreKtx = "1.15.0"
-lifecycleRuntime = "2.8.7"
-activityCompose = "1.9.3"
-composeBom = "2024.12.01"
-appcompat = "1.7.0"
+agp = "9.0.1"
+kotlin = "2.3.10"
+coreKtx = "1.17.0"
+lifecycleRuntime = "2.10.0"
+activityCompose = "1.12.4"
+composeBom = "2026.02.01"
+appcompat = "1.7.1"
 moonshineVoice = "0.0.48"
 mlkitProofreading = "1.0.0-beta1"
 mlkitPrompt = "1.0.0-beta1"
-coroutines = "1.9.0"
+coroutines = "1.10.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

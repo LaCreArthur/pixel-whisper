@@ -38,6 +38,10 @@ android {
     buildFeatures {
         compose = true
     }
+
+    androidResources {
+        noCompress += listOf("ort", "bin", "json")
+    }
 }
 
 dependencies {

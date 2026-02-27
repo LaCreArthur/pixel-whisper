@@ -7,10 +7,10 @@ import com.google.mlkit.genai.proofreading.Proofreader
 import com.google.mlkit.genai.proofreading.ProofreaderOptions
 import com.google.mlkit.genai.proofreading.ProofreadingRequest
 import com.google.mlkit.genai.prompt.Generation
+import com.google.mlkit.genai.prompt.GenerativeModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
+import java.util.concurrent.TimeUnit
 
 class PolishEngine(context: Context) {
 
@@ -23,6 +23,7 @@ class PolishEngine(context: Context) {
     }
 
     private var proofreader: Proofreader? = null
+    private var promptModel: GenerativeModel? = null
     private var proofreadingAvailable = false
     private var promptAvailable = false
 
@@ -39,22 +40,15 @@ class PolishEngine(context: Context) {
         }
     }
 
-    suspend fun initialize() {
+    suspend fun initialize() = withContext(Dispatchers.IO) {
         checkProofreadingAvailability()
         checkPromptAvailability()
     }
 
-    private suspend fun checkProofreadingAvailability() {
+    private fun checkProofreadingAvailability() {
         proofreader?.let { client ->
             try {
-                val status = suspendCancellableCoroutine { cont ->
-                    client.checkFeatureStatus()
-                        .addOnSuccessListener { cont.resume(it) }
-                        .addOnFailureListener {
-                            Log.e(TAG, "Proofreading status check failed", it)
-                            cont.resume(-1)
-                        }
-                }
+                val status = client.checkFeatureStatus().get(10, TimeUnit.SECONDS)
                 when (status) {
                     0 -> { // AVAILABLE
                         proofreadingAvailable = true
@@ -63,7 +57,7 @@ class PolishEngine(context: Context) {
                     }
                     1 -> { // DOWNLOADABLE
                         Log.d(TAG, "Proofreading model downloading...")
-                        client.downloadFeature { }
+                        // Download will happen in background; not available yet
                     }
                     else -> Log.w(TAG, "Proofreading unavailable (status=$status)")
                 }
@@ -73,11 +67,9 @@ class PolishEngine(context: Context) {
         }
     }
 
-    private suspend fun checkPromptAvailability() {
+    private fun checkPromptAvailability() {
         try {
-            val model = Generation.getClient()
-            // Prompt API availability check is implicit — if getClient() succeeds
-            // and the device supports it, it works. We'll catch errors at inference time.
+            promptModel = Generation.getClient()
             promptAvailable = true
             Log.d(TAG, "Prompt API client created")
         } catch (e: Exception) {
@@ -97,7 +89,7 @@ class PolishEngine(context: Context) {
         }
 
         // Stage 2: Filler removal via Prompt API
-        if (promptAvailable) {
+        if (promptAvailable && promptModel != null) {
             result = runFillerRemoval(result)
         }
 
@@ -105,42 +97,24 @@ class PolishEngine(context: Context) {
         result
     }
 
-    private suspend fun runProofreading(text: String): String {
+    private fun runProofreading(text: String): String {
         return try {
-            suspendCancellableCoroutine { cont ->
-                val request = ProofreadingRequest.builder(text).build()
-                proofreader!!.runInference(request)
-                    .addOnSuccessListener { result ->
-                        val proofread = result.toString()
-                        cont.resume(proofread.ifBlank { text })
-                    }
-                    .addOnFailureListener {
-                        Log.e(TAG, "Proofreading failed", it)
-                        cont.resume(text)
-                    }
-            }
+            val request = ProofreadingRequest.builder(text).build()
+            val result = proofreader!!.runInference(request).get(10, TimeUnit.SECONDS)
+            val proofread = result.toString()
+            proofread.ifBlank { text }
         } catch (e: Exception) {
-            Log.e(TAG, "Proofreading exception", e)
+            Log.e(TAG, "Proofreading failed", e)
             text
         }
     }
 
     private suspend fun runFillerRemoval(text: String): String {
         return try {
-            val model = Generation.getClient()
-            val response = suspendCancellableCoroutine { cont ->
-                model.generateContent("$FILLER_PROMPT$text")
-                    .addOnSuccessListener { result ->
-                        cont.resume(result.text ?: text)
-                    }
-                    .addOnFailureListener {
-                        Log.e(TAG, "Prompt API failed", it)
-                        cont.resume(text)
-                    }
-            }
-            response.ifBlank { text }
+            val response = promptModel!!.generateContent("$FILLER_PROMPT$text")
+            response.text?.ifBlank { text } ?: text
         } catch (e: Exception) {
-            Log.e(TAG, "Filler removal exception", e)
+            Log.e(TAG, "Filler removal failed", e)
             text
         }
     }
@@ -148,5 +122,6 @@ class PolishEngine(context: Context) {
     fun release() {
         proofreader?.close()
         proofreader = null
+        promptModel = null
     }
 }
