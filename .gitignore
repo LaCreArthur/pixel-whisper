@@ -1,0 +1,13 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+# Moonshine model files (large, download separately)
+app/src/main/assets/base-en/*.ort
+app/src/main/assets/base-en/*.bin

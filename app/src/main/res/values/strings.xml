@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PixelWhisper</string>
+    <string name="accessibility_service_label">PixelWhisper Text Injection</string>
+    <string name="accessibility_service_description">Allows PixelWhisper to insert transcribed and polished text into any text field on your device.</string>
+    <string name="notification_channel_name">PixelWhisper Active</string>
+    <string name="notification_channel_description">Shows when PixelWhisper is running</string>
+</resources>
