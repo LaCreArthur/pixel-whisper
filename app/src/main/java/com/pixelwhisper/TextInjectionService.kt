@@ -34,25 +34,31 @@ class TextInjectionService : AccessibilityService() {
 
         val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
         if (focused != null && focused.isEditable) {
+            // Read existing text and append after it
+            val existing = focused.text?.toString().orEmpty()
+            val combined = if (existing.isNotEmpty()) {
+                val separator = if (existing.endsWith(" ") || existing.endsWith("\n")) "" else " "
+                "$existing$separator$text"
+            } else {
+                text
+            }
+
             val args = Bundle().apply {
                 putCharSequence(
                     AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                    text
+                    combined
                 )
             }
             val success = focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
             if (success) {
-                Log.d(TAG, "Text injected into focused field")
+                Log.d(TAG, "Text appended to focused field (existing=${existing.length} chars)")
             } else {
                 Log.w(TAG, "ACTION_SET_TEXT failed, falling back to clipboard")
                 pasteViaClipboard(focused, text)
             }
-            focused.recycle()
         } else {
-            focused?.recycle()
             copyToClipboard(text)
         }
-        root.recycle()
     }
 
     private fun pasteViaClipboard(node: AccessibilityNodeInfo, text: String) {

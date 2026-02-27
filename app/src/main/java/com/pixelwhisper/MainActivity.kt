@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -42,7 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import android.Manifest
-import android.content.pm.ServiceInfo
+
 import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
@@ -50,6 +51,7 @@ class MainActivity : ComponentActivity() {
     private var overlayGranted by mutableStateOf(false)
     private var micGranted by mutableStateOf(false)
     private var accessibilityGranted by mutableStateOf(false)
+    private var polishEnabled by mutableStateOf(true)
 
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -66,6 +68,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refreshPermissions()
+        polishEnabled = getSharedPreferences("settings", MODE_PRIVATE)
+            .getBoolean("polish_enabled", true)
 
         setContent {
             MaterialTheme {
@@ -163,7 +167,34 @@ class MainActivity : ComponentActivity() {
                 }
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = polishEnabled,
+                    onCheckedChange = { checked ->
+                        polishEnabled = checked
+                        getSharedPreferences("settings", MODE_PRIVATE)
+                            .edit().putBoolean("polish_enabled", checked).apply()
+                    }
+                )
+                Column {
+                    Text(
+                        text = "Polish with LLM",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = "Fix transcription errors and filler words",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             val allGranted = overlayGranted && micGranted
             Button(

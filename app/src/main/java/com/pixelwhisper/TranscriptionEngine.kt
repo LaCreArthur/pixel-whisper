@@ -7,11 +7,11 @@ import android.media.MediaRecorder
 import android.util.Log
 import ai.moonshine.voice.Transcriber
 import ai.moonshine.voice.JNI
-import ai.moonshine.voice.TranscriptEventListener
-import ai.moonshine.voice.TranscriptEvent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class TranscriptionEngine(private val context: Context) {
 
@@ -19,39 +19,23 @@ class TranscriptionEngine(private val context: Context) {
         private const val TAG = "TranscriptionEngine"
         private const val SAMPLE_RATE = 16000
         private const val MODEL_DIR = "medium-streaming-en"
+        // Max 60 seconds of audio (16kHz mono float32)
+        private const val MAX_SAMPLES = SAMPLE_RATE * 60
     }
 
     private var transcriber: Transcriber? = null
     private var audioRecord: AudioRecord? = null
     private var isRecording = false
-    private val transcriptBuilder = StringBuilder()
     private var recordingThread: Thread? = null
+
+    // Buffer all audio for batch transcription
+    private var audioBuffer = FloatArray(MAX_SAMPLES)
+    private var audioBufferPos = 0
 
     suspend fun initialize() = withContext(Dispatchers.IO) {
         val modelPath = copyModelToFiles()
         transcriber = Transcriber().apply {
             loadFromFiles(modelPath, JNI.MOONSHINE_MODEL_ARCH_MEDIUM_STREAMING)
-            addListener { event ->
-                event.accept(object : TranscriptEventListener() {
-                    override fun onLineTextChanged(event: TranscriptEvent.LineTextChanged) {
-                        // Partial updates — we only care about completed lines
-                    }
-
-                    override fun onLineCompleted(event: TranscriptEvent.LineCompleted) {
-                        val text = event.line.text.trim()
-                        if (text.isNotEmpty()) {
-                            synchronized(transcriptBuilder) {
-                                if (transcriptBuilder.isNotEmpty()) transcriptBuilder.append(" ")
-                                transcriptBuilder.append(text)
-                            }
-                        }
-                    }
-
-                    override fun onError(event: TranscriptEvent.Error) {
-                        Log.e(TAG, "Transcription error", event.cause)
-                    }
-                })
-            }
         }
         Log.d(TAG, "Moonshine model loaded from $modelPath")
     }
@@ -59,11 +43,7 @@ class TranscriptionEngine(private val context: Context) {
     fun start() {
         if (isRecording) return
 
-        synchronized(transcriptBuilder) {
-            transcriptBuilder.clear()
-        }
-
-        transcriber?.start()
+        audioBufferPos = 0
 
         val bufferSize = AudioRecord.getMinBufferSize(
             SAMPLE_RATE,
@@ -84,15 +64,31 @@ class TranscriptionEngine(private val context: Context) {
 
         recordingThread = Thread {
             val buffer = ShortArray(bufferSize / 2)
-            val floatBuffer = FloatArray(buffer.size)
+            var chunkCount = 0
 
             while (isRecording) {
                 val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
                 if (read > 0) {
-                    for (i in 0 until read) {
-                        floatBuffer[i] = buffer[i] / 32768.0f
+                    // Convert to float and append to buffer
+                    val remaining = MAX_SAMPLES - audioBufferPos
+                    val toWrite = minOf(read, remaining)
+                    for (i in 0 until toWrite) {
+                        audioBuffer[audioBufferPos + i] = buffer[i] / 32768.0f
                     }
-                    transcriber?.addAudio(floatBuffer.copyOf(read), SAMPLE_RATE)
+                    audioBufferPos += toWrite
+
+                    if (chunkCount++ % 50 == 0) {
+                        var maxAmp: Short = 0
+                        for (i in 0 until read) {
+                            if (buffer[i] > maxAmp) maxAmp = buffer[i]
+                        }
+                        Log.d(TAG, "Audio chunk #$chunkCount read=$read maxAmp=$maxAmp buffered=${audioBufferPos}/${MAX_SAMPLES}")
+                    }
+
+                    if (audioBufferPos >= MAX_SAMPLES) {
+                        Log.w(TAG, "Audio buffer full (60s), stopping capture")
+                        break
+                    }
                 }
             }
         }.apply {
@@ -100,7 +96,7 @@ class TranscriptionEngine(private val context: Context) {
             start()
         }
 
-        Log.d(TAG, "Recording started")
+        Log.d(TAG, "Recording started (batch mode)")
     }
 
     fun stop(): String {
@@ -114,18 +110,29 @@ class TranscriptionEngine(private val context: Context) {
         audioRecord?.release()
         audioRecord = null
 
-        transcriber?.stop()
-
-        val result = synchronized(transcriptBuilder) {
-            transcriptBuilder.toString()
+        if (audioBufferPos == 0) {
+            Log.d(TAG, "No audio captured")
+            return ""
         }
-        Log.d(TAG, "Recording stopped. Transcript: $result")
+
+        val samples = audioBuffer.copyOf(audioBufferPos)
+        val durationSec = audioBufferPos.toFloat() / SAMPLE_RATE
+        Log.d(TAG, "Batch transcribing ${audioBufferPos} samples (${String.format("%.1f", durationSec)}s)")
+
+        val result = try {
+            val transcript = transcriber?.transcribeWithoutStreaming(samples, SAMPLE_RATE)
+            transcript?.text()?.trim().orEmpty()
+        } catch (e: Exception) {
+            Log.e(TAG, "Batch transcription failed", e)
+            ""
+        }
+
+        Log.d(TAG, "Transcript: '$result'")
         return result
     }
 
     fun release() {
         if (isRecording) stop()
-        transcriber?.removeAllListeners()
         transcriber = null
     }
 

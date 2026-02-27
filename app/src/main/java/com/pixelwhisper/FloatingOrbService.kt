@@ -10,6 +10,7 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
+import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.util.Log
 import android.view.Gravity
@@ -22,7 +23,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +64,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class FloatingOrbService : Service(),
     androidx.lifecycle.LifecycleOwner,
@@ -119,7 +121,7 @@ class FloatingOrbService : Service(),
         }
 
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         setupOverlay()
 
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
@@ -201,7 +203,10 @@ class FloatingOrbService : Service(),
                             windowManager.updateViewLayout(composeView, layoutParams)
                         }
                     }
-                    .clickable { onOrbTapped() }
+                    .combinedClickable(
+                        onClick = { onOrbTapped() },
+                        onLongClick = { stopSelf() }
+                    )
             ) {
                 Icon(
                     imageVector = if (orbState == OrbState.RECORDING) Icons.Default.Stop else Icons.Default.Mic,
@@ -237,30 +242,52 @@ class FloatingOrbService : Service(),
             }
             OrbState.RECORDING -> {
                 orbState = OrbState.PROCESSING
-                statusText = "Processing..."
-                val transcript = transcriptionEngine.stop()
+                statusText = "Transcribing..."
 
                 serviceScope.launch {
-                    try {
-                        if (transcript.isBlank()) {
-                            statusText = "No speech detected"
-                            orbState = OrbState.IDLE
-                            return@launch
-                        }
+                    val transcript = withContext(Dispatchers.IO) {
+                        transcriptionEngine.stop()
+                    }
 
-                        statusText = "Polishing..."
-                        val polished = polishEngine.polish(transcript)
-                        injectOrCopy(polished)
-                        statusText = ""
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Pipeline error", e)
-                        statusText = "Error"
-                        // Still try to inject raw transcript
-                        if (transcript.isNotBlank()) {
-                            injectOrCopy(transcript)
-                        }
-                    } finally {
+                    if (transcript.isBlank()) {
+                        statusText = "No speech detected"
                         orbState = OrbState.IDLE
+                        return@launch
+                    }
+
+                    val polishEnabled = getSharedPreferences("settings", MODE_PRIVATE)
+                        .getBoolean("polish_enabled", true)
+
+                    if (!polishEnabled) {
+                        injectOrCopy(transcript)
+                        statusText = ""
+                        orbState = OrbState.IDLE
+                        return@launch
+                    }
+
+                    // Launch transparent activity so AICore considers us foreground
+                    ForegroundProxyActivity.launch(this@FloatingOrbService) {
+                        serviceScope.launch {
+                            try {
+                                statusText = "Polishing..."
+                                val polished = polishEngine.polish(transcript)
+                                // Dismiss proxy BEFORE injecting so focus returns to the text field
+                                ForegroundProxyActivity.dismiss()
+                                kotlinx.coroutines.delay(150)
+                                injectOrCopy(polished)
+                                statusText = ""
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Pipeline error", e)
+                                statusText = "Error"
+                                ForegroundProxyActivity.dismiss()
+                                kotlinx.coroutines.delay(150)
+                                if (transcript.isNotBlank()) {
+                                    injectOrCopy(transcript)
+                                }
+                            } finally {
+                                orbState = OrbState.IDLE
+                            }
+                        }
                     }
                 }
             }
@@ -312,6 +339,8 @@ class FloatingOrbService : Service(),
 
     override fun onDestroy() {
         super.onDestroy()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         if (::composeView.isInitialized) {
             windowManager.removeView(composeView)

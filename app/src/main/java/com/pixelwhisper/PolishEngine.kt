@@ -16,10 +16,13 @@ class PolishEngine(context: Context) {
 
     companion object {
         private const val TAG = "PolishEngine"
-        private const val FILLER_PROMPT =
-            "Remove filler words (um, uh, like, you know, so, basically, actually, I mean) " +
-            "from the following text. Fix any remaining grammar issues. " +
-            "Return ONLY the cleaned text, nothing else:\n\n"
+        private const val POLISH_PROMPT =
+            "You are a speech-to-text post-processor. The following text was transcribed from voice " +
+            "and may contain errors. Fix: (1) words that sound similar but don't make sense in context " +
+            "(e.g. 'dated' should be 'recorded', 'their' should be 'there'), " +
+            "(2) filler words (um, uh, like, you know, so, basically), " +
+            "(3) grammar and punctuation. " +
+            "Return ONLY the corrected text, nothing else:\n\n"
     }
 
     private var proofreader: Proofreader? = null
@@ -88,9 +91,9 @@ class PolishEngine(context: Context) {
             result = runProofreading(result)
         }
 
-        // Stage 2: Filler removal via Prompt API
+        // Stage 2: ASR correction + filler removal via Prompt API
         if (promptAvailable && promptModel != null) {
-            result = runFillerRemoval(result)
+            result = runPolishPrompt(result)
         }
 
         Log.d(TAG, "Polish complete: '$rawText' -> '$result'")
@@ -101,7 +104,7 @@ class PolishEngine(context: Context) {
         return try {
             val request = ProofreadingRequest.builder(text).build()
             val result = proofreader!!.runInference(request).get(10, TimeUnit.SECONDS)
-            val proofread = result.toString()
+            val proofread = result.results.firstOrNull()?.text ?: text
             proofread.ifBlank { text }
         } catch (e: Exception) {
             Log.e(TAG, "Proofreading failed", e)
@@ -109,12 +112,14 @@ class PolishEngine(context: Context) {
         }
     }
 
-    private suspend fun runFillerRemoval(text: String): String {
+    private suspend fun runPolishPrompt(text: String): String {
         return try {
-            val response = promptModel!!.generateContent("$FILLER_PROMPT$text")
-            response.text?.ifBlank { text } ?: text
+            val response = promptModel!!.generateContent("$POLISH_PROMPT$text")
+            val polished = response.candidates.firstOrNull()?.text?.ifBlank { text } ?: text
+            Log.d(TAG, "Prompt API: '$text' -> '$polished'")
+            polished
         } catch (e: Exception) {
-            Log.e(TAG, "Filler removal failed", e)
+            Log.e(TAG, "Polish prompt failed", e)
             text
         }
     }
