@@ -6,38 +6,41 @@ On-device voice-to-text for Android. Speak → transcribe → polish → inject 
 
 ## Setup
 
-### 1. Open in Android Studio
-
-Open this project in Android Studio (Ladybug+). It will generate the Gradle wrapper automatically.
-
-### 2. Download Moonshine model files
+### Quick setup
 
 ```bash
-pip install moonshine-voice
-python -m moonshine_voice.download --language en
+chmod +x setup.sh && ./setup.sh
 ```
 
-Copy the resulting model files to `app/src/main/assets/base-en/`:
-- `encoder_model.ort`
-- `decoder_model_merged.ort`
-- `tokenizer.bin`
+This handles everything: Gradle wrapper, model download, build, install, and accessibility setup.
 
-### 3. Build & install
+### Manual setup
 
+**1. Gradle wrapper** (if not present):
+```bash
+gradle wrapper --gradle-version 8.11.1
+```
+
+**2. Moonshine model files** (already included if you ran setup.sh):
+```bash
+python3 -m venv /tmp/moonshine-env
+source /tmp/moonshine-env/bin/activate
+pip install moonshine-voice
+python3 -m moonshine_voice.download --language en
+cp ~/Library/Caches/moonshine_voice/download.moonshine.ai/model/medium-streaming-en/quantized/* \
+   app/src/main/assets/medium-streaming-en/
+```
+
+**3. Build & install:**
 ```bash
 ./gradlew assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### 4. Enable Accessibility Service (for text injection)
-
-Sideloaded apps on Android 15 hit Enhanced Confirmation Mode. Bypass via ADB:
-
+**4. Enable Accessibility Service** (sideloaded apps need ADB bypass on Android 15):
 ```bash
 adb shell settings put secure enabled_accessibility_services com.pixelwhisper/.TextInjectionService
 ```
-
-Or install via Play Store to avoid this.
 
 ## Usage
 
@@ -62,4 +65,4 @@ FloatingOrbService (Compose overlay + foreground service)
 
 - Pixel 10 (or any device with Gemini Nano support)
 - Android 15 (API 35)
-- ~200MB for Moonshine model + ~100MB for Gemini Nano (auto-downloaded)
+- ~290MB for Moonshine medium-streaming model + ~100MB for Gemini Nano (auto-downloaded)

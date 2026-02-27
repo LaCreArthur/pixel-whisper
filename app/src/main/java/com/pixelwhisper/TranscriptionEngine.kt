@@ -18,7 +18,7 @@ class TranscriptionEngine(private val context: Context) {
     companion object {
         private const val TAG = "TranscriptionEngine"
         private const val SAMPLE_RATE = 16000
-        private const val MODEL_DIR = "base-en"
+        private const val MODEL_DIR = "medium-streaming-en"
     }
 
     private var transcriber: Transcriber? = null
@@ -30,7 +30,7 @@ class TranscriptionEngine(private val context: Context) {
     suspend fun initialize() = withContext(Dispatchers.IO) {
         val modelPath = copyModelToFiles()
         transcriber = Transcriber().apply {
-            loadFromFiles(modelPath, JNI.MOONSHINE_MODEL_ARCH_BASE)
+            loadFromFiles(modelPath, JNI.MOONSHINE_MODEL_ARCH_MEDIUM_STREAMING)
             addListener { event ->
                 event.accept(object : TranscriptEventListener() {
                     override fun onLineTextChanged(event: TranscriptEvent.LineTextChanged) {
