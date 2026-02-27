@@ -1,68 +1,70 @@
 # PixelWhisper
 
-On-device voice-to-text for Android. Speak → transcribe → polish → inject into any text field.
+On-device voice-to-text for Android. Tap the floating orb, speak, text appears wherever you're typing.
 
-**Stack:** Moonshine Voice (ASR) + Gemini Nano via ML Kit GenAI (polish) + AccessibilityService (injection). 100% on-device, zero cloud.
+Moonshine Voice transcribes, Gemini Nano polishes, AccessibilityService injects. 100% local, zero cloud.
 
 ## Setup
-
-### Quick setup
 
 ```bash
 chmod +x setup.sh && ./setup.sh
 ```
 
-This handles everything: Gradle wrapper, model download, build, install, and accessibility setup.
+Handles everything: Gradle wrapper, Moonshine model download (~290MB), build, install, and accessibility service.
 
 ### Manual setup
 
-**1. Gradle wrapper** (if not present):
-```bash
-gradle wrapper --gradle-version 8.11.1
-```
-
-**2. Moonshine model files** (already included if you ran setup.sh):
+**1. Moonshine model files:**
 ```bash
 python3 -m venv /tmp/moonshine-env
 source /tmp/moonshine-env/bin/activate
 pip install moonshine-voice
 python3 -m moonshine_voice.download --language en
+mkdir -p app/src/main/assets/medium-streaming-en
 cp ~/Library/Caches/moonshine_voice/download.moonshine.ai/model/medium-streaming-en/quantized/* \
    app/src/main/assets/medium-streaming-en/
 ```
 
-**3. Build & install:**
+**2. Build & install:**
 ```bash
-./gradlew assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
+./gradlew installDebug
 ```
 
-**4. Enable Accessibility Service** (sideloaded apps need ADB bypass on Android 15):
+**3. Enable Accessibility Service** (sideloaded apps need ADB bypass on Android 15):
 ```bash
 adb shell settings put secure enabled_accessibility_services com.pixelwhisper/.TextInjectionService
 ```
 
 ## Usage
 
-1. Open PixelWhisper → grant overlay + mic permissions
-2. Tap **Launch PixelWhisper** → floating blue orb appears
-3. Tap orb → starts recording (orb turns red, pulses)
-4. Speak freely
-5. Tap orb again → transcribes → polishes → injects text
-6. If a text field is focused → text appears there
-7. If nothing is focused → copied to clipboard
+1. Open PixelWhisper, grant overlay + mic permissions
+2. Tap **Launch PixelWhisper** — floating blue orb appears
+3. Tap orb — starts recording (turns red, pulses)
+4. Speak
+5. Tap again — transcribes and injects text into focused field (or clipboard)
+6. Long-press orb to dismiss
 
-## Architecture
+**Polish toggle:** Uncheck "Polish with LLM" in the main screen to get raw Moonshine output without Gemini Nano post-processing.
+
+## How it works
 
 ```
-FloatingOrbService (Compose overlay + foreground service)
-    ├── TranscriptionEngine (Moonshine Voice + AudioRecord)
+FloatingOrbService (Compose overlay, foreground service)
+    ├── TranscriptionEngine (Moonshine Voice, batch transcription)
     ├── PolishEngine (ML Kit Proofreading + Prompt API)
-    └── TextInjectionService (AccessibilityService)
+    └── TextInjectionService (AccessibilityService + clipboard fallback)
 ```
+
+Audio is buffered during recording and batch-transcribed after you stop for maximum accuracy (not streaming). The polish step uses Gemini Nano on-device to fix ASR errors, filler words, and punctuation.
+
+Text is appended to existing content in the focused field — it won't overwrite what's already there.
 
 ## Requirements
 
-- Pixel 10 (or any device with Gemini Nano support)
-- Android 15 (API 35)
-- ~290MB for Moonshine medium-streaming model + ~100MB for Gemini Nano (auto-downloaded)
+- Android 15+ (API 35)
+- Gemini Nano support (Pixel 9+, Samsung Galaxy S24+, etc.)
+- ~290MB for Moonshine model + ~100MB for Gemini Nano (auto-downloaded by Google Play Services)
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -34,8 +34,10 @@ class TextInjectionService : AccessibilityService() {
 
         val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
         if (focused != null && focused.isEditable) {
-            // Read existing text and append after it
-            val existing = focused.text?.toString().orEmpty()
+            // Read existing text and append after it (ignore placeholder/hint)
+            val rawText = focused.text?.toString().orEmpty()
+            val hint = focused.hintText?.toString().orEmpty()
+            val existing = if (rawText == hint) "" else rawText
             val combined = if (existing.isNotEmpty()) {
                 val separator = if (existing.endsWith(" ") || existing.endsWith("\n")) "" else " "
                 "$existing$separator$text"
