@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- No event types and no window content: the service cannot read the screen.
+     flagInputMethodEditor gives it the focused field's input connection to type at the cursor. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeViewFocused|typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows"
-    android:canRetrieveWindowContent="true"
-    android:canPerformGestures="false"
-    android:description="@string/accessibility_service_description"
-    android:notificationTimeout="100" />
+    android:accessibilityFlags="flagInputMethodEditor"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/service_description"
+    android:settingsActivity="com.pixelwhisper.MainActivity" />

@@ -8,5 +8,5 @@
 .externalNativeBuild
 .cxx
 local.properties
-# Moonshine model files (large, download separately)
-app/src/main/assets/medium-streaming-en/
+# sherpa-onnx AAR, fetched by scripts/setup-phone.sh
+app/libs/

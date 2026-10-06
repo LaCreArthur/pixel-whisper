@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PixelWhisper</string>
-    <string name="accessibility_service_label">PixelWhisper Text Injection</string>
-    <string name="accessibility_service_description">Allows PixelWhisper to insert transcribed and polished text into any text field on your device.</string>
-    <string name="notification_channel_name">PixelWhisper Active</string>
-    <string name="notification_channel_description">Shows when PixelWhisper is running</string>
+    <string name="service_description">Shows a mic button in text fields. Tap it or hold it to dictate, and the text is typed at the cursor. Speech stays on the phone. This service cannot read your screen.</string>
     <color name="ic_launcher_background">#4A90D9</color>
 </resources>

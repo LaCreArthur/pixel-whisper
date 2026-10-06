@@ -1,282 +1,63 @@
 package com.pixelwhisper
 
-import android.accessibilityservice.AccessibilityServiceInfo
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Bundle
-import android.provider.Settings
-import android.view.accessibility.AccessibilityManager
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Accessibility
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
 import android.Manifest
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Bundle
+import android.view.Gravity
+import android.view.Window
+import android.view.WindowInsets
+import android.view.accessibility.AccessibilityManager
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
 
-import androidx.core.content.ContextCompat
-
-class MainActivity : ComponentActivity() {
-
-    private var overlayGranted by mutableStateOf(false)
-    private var micGranted by mutableStateOf(false)
-    private var accessibilityGranted by mutableStateOf(false)
-    private var polishEnabled by mutableStateOf(true)
-
-    private val micPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        micGranted = granted
-    }
-
-    private val overlaySettingsLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        overlayGranted = Settings.canDrawOverlays(this)
-    }
+/** Status and test screen, also the service's settings page. Setup itself is scripts/setup-phone.sh on the Mac. */
+class MainActivity : Activity() {
+    private lateinit var status: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        refreshPermissions()
-        polishEnabled = getSharedPreferences("settings", MODE_PRIVATE)
-            .getBoolean("polish_enabled", true)
-
-        setContent {
-            MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    SetupScreen()
-                }
-            }
+        requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        status = TextView(this).apply { textSize = 16f }
+        val field = EditText(this).apply {
+            hint = "Tap here, then tap the orb and speak"
+            minLines = 4
+            gravity = Gravity.TOP
         }
+        val credits = TextView(this).apply {
+            text = "Speech: Whisper large-v3-turbo (MIT, OpenAI) on sherpa-onnx (Apache-2.0), Silero VAD (MIT). " +
+                "Everything runs on this phone; the app has no internet access."
+            textSize = 12f
+            alpha = 0.7f
+        }
+        setContentView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(status)
+            addView(field)
+            addView(credits)
+            setOnApplyWindowInsetsListener { v, insets ->
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
+                v.setPadding(pad + bars.left, pad + bars.top, pad + bars.right, pad + bars.bottom)
+                insets
+            }
+        })
     }
 
     override fun onResume() {
         super.onResume()
-        refreshPermissions()
-    }
-
-    private fun refreshPermissions() {
-        overlayGranted = Settings.canDrawOverlays(this)
-        micGranted = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.RECORD_AUDIO
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        accessibilityGranted = isAccessibilityServiceEnabled()
-    }
-
-    private fun isAccessibilityServiceEnabled(): Boolean {
-        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-        val enabledServices = am.getEnabledAccessibilityServiceList(
-            AccessibilityServiceInfo.FEEDBACK_GENERIC
-        )
-        return enabledServices.any {
-            it.resolveInfo.serviceInfo.name == TextInjectionService::class.java.name
-        }
-    }
-
-    @Composable
-    private fun SetupScreen() {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "PixelWhisper",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            Text(
-                text = "Voice to text, everywhere",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            PermissionCard(
-                title = "Overlay",
-                description = "Draw floating orb over other apps",
-                icon = Icons.Default.Layers,
-                granted = overlayGranted,
-                onRequest = {
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                    overlaySettingsLauncher.launch(intent)
-                }
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            PermissionCard(
-                title = "Microphone",
-                description = "Record audio for transcription",
-                icon = Icons.Default.Mic,
-                granted = micGranted,
-                onRequest = {
-                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                }
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            PermissionCard(
-                title = "Accessibility",
-                description = "Inject text into any app",
-                icon = Icons.Default.Accessibility,
-                granted = accessibilityGranted,
-                onRequest = {
-                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Checkbox(
-                    checked = polishEnabled,
-                    onCheckedChange = { checked ->
-                        polishEnabled = checked
-                        getSharedPreferences("settings", MODE_PRIVATE)
-                            .edit().putBoolean("polish_enabled", checked).apply()
-                    }
-                )
-                Column {
-                    Text(
-                        text = "Polish with LLM",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Text(
-                        text = "Fix transcription errors and filler words",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            val allGranted = overlayGranted && micGranted
-            Button(
-                onClick = { launchOrb() },
-                enabled = allGranted,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-            ) {
-                Text(
-                    text = if (allGranted) "Launch PixelWhisper" else "Grant permissions above",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-
-            if (!accessibilityGranted && allGranted) {
-                Text(
-                    text = "Accessibility is optional — without it, text goes to clipboard",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-        }
-    }
-
-    @Composable
-    private fun PermissionCard(
-        title: String,
-        description: String,
-        icon: ImageVector,
-        granted: Boolean,
-        onRequest: () -> Unit
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = if (granted)
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                else
-                    MaterialTheme.colorScheme.surfaceVariant
-            ),
-            onClick = { if (!granted) onRequest() }
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = if (granted) Icons.Default.CheckCircle else icon,
-                    contentDescription = title,
-                    tint = if (granted) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(32.dp)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (granted) {
-                    Text(
-                        text = "Granted",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color(0xFF4CAF50)
-                    )
-                }
-            }
-        }
-    }
-
-    private fun launchOrb() {
-        val intent = Intent(this, FloatingOrbService::class.java)
-        startForegroundService(intent)
-        finish()
+        val mic = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val service = getSystemService(AccessibilityManager::class.java)
+            .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            .any { it.resolveInfo.serviceInfo.packageName == packageName }
+        val missing = Models.missing(this)
+        status.text = listOf(
+            "Microphone: " + if (mic) "allowed" else "not allowed",
+            "Dictation service: " + if (service) "on" else "off",
+            "Speech models: " + if (missing.isEmpty()) "ready" else "missing " + missing.joinToString(),
+            if (mic && service && missing.isEmpty()) "Ready." else "Run scripts/setup-phone.sh on the Mac with the phone on USB.",
+        ).joinToString("\n")
     }
 }
